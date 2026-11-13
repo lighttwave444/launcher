@@ -5,8 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.RenderEffect
-import android.graphics.Shader
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
@@ -18,6 +19,7 @@ import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -145,31 +147,97 @@ class MainActivity : AppCompatActivity() {
             .hideSoftInputFromWindow(search.windowToken, 0)
     }
 
-    /** Desfoque próprio: pega o papel de parede, reduz e borra — funciona sem depender do sistema. */
+    private var lastWallpaperId = -2
+
+    /** Vidro líquido: lente leve (peças de vidro) + fundo borrado e saturado (gaveta). */
     private fun loadBlurredWallpaper() {
-        try {
-            val d = WallpaperManager.getInstance(this).drawable ?: return
-            val dw = d.intrinsicWidth
-            val dh = d.intrinsicHeight
-            if (dw <= 0 || dh <= 0) return
-            val m = resources.displayMetrics
-            val w = 120
-            val h = max(1, (w.toFloat() * m.heightPixels / m.widthPixels).toInt())
-            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val c = Canvas(bmp)
-            val s = max(w.toFloat() / dw, h.toFloat() / dh)
-            c.translate((w - dw * s) / 2f, (h - dh * s) / 2f)
-            c.scale(s, s)
-            d.setBounds(0, 0, dw, dh)
-            d.draw(c)
-            blurImage.setImageBitmap(bmp)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                blurImage.setRenderEffect(
-                    RenderEffect.createBlurEffect(30f, 30f, Shader.TileMode.CLAMP)
-                )
+        val wm = WallpaperManager.getInstance(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                val id = wm.getWallpaperId(WallpaperManager.FLAG_SYSTEM)
+                if (id == lastWallpaperId) return
+            } catch (t: Throwable) { /* segue e tenta carregar */ }
+        }
+        val m = resources.displayMetrics
+        Thread {
+            try {
+                val d = wm.drawable ?: return@Thread
+                val dw = d.intrinsicWidth
+                val dh = d.intrinsicHeight
+                if (dw <= 0 || dh <= 0) return@Thread
+                val w = 270
+                val h = max(1, (w.toFloat() * m.heightPixels / m.widthPixels).toInt())
+                val base = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                val c = Canvas(base)
+                val sc = max(w.toFloat() / dw, h.toFloat() / dh)
+                c.translate((w - dw * sc) / 2f, (h - dh * sc) / 2f)
+                c.scale(sc, sc)
+                d.setBounds(0, 0, dw, dh)
+                d.draw(c)
+
+                val lens = saturate(boxBlur(base, 3, 2), 1.5f)      // quase nítido, só suave
+                val drawerBg = saturate(boxBlur(base, 9, 3), 1.7f)  // mais borrado, cores vivas
+
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    blurImage.setImageBitmap(drawerBg)
+                    val dens = resources.displayMetrics.density
+                    search.background = GlassDrawable(search, root, lens, 24f * dens)
+                    findViewById<LinearLayout>(R.id.dock).background =
+                        GlassDrawable(findViewById(R.id.dock), root, lens, 30f * dens)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        try { lastWallpaperId = wm.getWallpaperId(WallpaperManager.FLAG_SYSTEM) }
+                        catch (t: Throwable) { }
+                    }
+                }
+            } catch (t: Throwable) {
+                // sem acesso ao papel de parede: ficam o fundo escuro e as peças de vidro simples
             }
-        } catch (t: Throwable) {
-            // sem acesso ao papel de parede: fica o fundo escuro sólido da gaveta
+        }.start()
+    }
+
+    private fun saturate(src: Bitmap, amount: Float): Bitmap {
+        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val cm = ColorMatrix().apply { setSaturation(amount) }
+        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
+        Canvas(out).drawBitmap(src, 0f, 0f, paint)
+        return out
+    }
+
+    private fun boxBlur(src: Bitmap, radius: Int, passes: Int): Bitmap {
+        val w = src.width
+        val h = src.height
+        var a = IntArray(w * h)
+        src.getPixels(a, 0, w, 0, 0, w, h)
+        var b = IntArray(w * h)
+        repeat(passes) {
+            blurPass(a, b, w, h, radius, true)
+            blurPass(b, a, w, h, radius, false)
+        }
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(a, 0, w, 0, 0, w, h)
+        return out
+    }
+
+    private fun blurPass(inp: IntArray, out: IntArray, w: Int, h: Int, r: Int, horizontal: Boolean) {
+        val lines = if (horizontal) h else w
+        val len = if (horizontal) w else h
+        val div = 2 * r + 1
+        for (l in 0 until lines) {
+            for (i in 0 until len) {
+                var rs = 0
+                var gs = 0
+                var bs = 0
+                for (k in -r..r) {
+                    val j = (i + k).coerceIn(0, len - 1)
+                    val p = if (horizontal) inp[l * w + j] else inp[j * w + l]
+                    rs += (p shr 16) and 0xFF
+                    gs += (p shr 8) and 0xFF
+                    bs += p and 0xFF
+                }
+                val px = (0xFF shl 24) or ((rs / div) shl 16) or ((gs / div) shl 8) or (bs / div)
+                if (horizontal) out[l * w + i] = px else out[i * w + l] = px
+            }
         }
     }
 
