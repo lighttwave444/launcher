@@ -2,9 +2,11 @@
 <resources>
     <style name="Theme.LiquidLauncher" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowShowWallpaper">true</item>
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- película escura translúcida: é ela que recebe o desfoque da janela -->
         <item name="android:windowBackground">@drawable/glass_background</item>
     </style>
 </resources>

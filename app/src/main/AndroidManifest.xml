@@ -2,6 +2,14 @@
 <manifest package="com.example.liquidlauncher"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11+: sem isso queryIntentActivities devolve lista quase vazia -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:label="Liquid Launcher"
@@ -9,6 +17,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:label="Liquid Launcher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
