@@ -7,8 +7,6 @@ import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.github.mmin18.realtimeblurview.BlurView
-import com.github.mmin18.realtimeblurview.RenderScriptBlur
 
 class MainActivity : AppCompatActivity() {
 
@@ -27,14 +25,6 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
-        // ---- Liquid glass (blur) setup ----
-        val blurView = findViewById<BlurView>(R.id.blur_view)
-        val rootView = findViewById<ViewGroup>(android.R.id.content)
-        blurView.setupWith(rootView)
-            .setBlurAlgorithm(RenderScriptBlur(this))
-            .setBlurRadius(20f) // adjust for stronger/weaker blur
-            .setHasFixedTransformationMatrix(true)
-        // -----------------------------------
 
         recyclerView = findViewById(R.id.app_grid)
         recyclerView.layoutManager = GridLayoutManager(this, 4)
