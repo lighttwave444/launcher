@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
     private val apps = mutableListOf<AppInfo>()
     private var drawerOpen = false
+    private val iconCache = mutableMapOf<String, android.graphics.drawable.Drawable>()
 
     // Apps do dock: cada item é uma lista de nomes/pacotes possíveis (o primeiro que existir vale)
     private val dockSpecs = listOf(
@@ -249,9 +250,11 @@ class MainActivity : AppCompatActivity() {
         val list = pm.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != packageName }
             .map {
+                val key = it.activityInfo.packageName + "/" + it.activityInfo.name
+                val glassIcon = iconCache.getOrPut(key) { IconGlass.make(this, it.loadIcon(pm)) }
                 AppInfo(
                     it.loadLabel(pm).toString(),
-                    it.loadIcon(pm),
+                    glassIcon,
                     it.activityInfo.packageName,
                     it.activityInfo.name
                 )
