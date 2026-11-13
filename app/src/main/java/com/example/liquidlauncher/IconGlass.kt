@@ -9,6 +9,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
@@ -45,11 +46,11 @@ object IconGlass {
         p.shader = null
 
         // o ícone inteiro, com as cores mais vivas (mesmo matiz, só mais saturado e brilhante)
-        val cm = ColorMatrix().apply { setSaturation(1.4f) }
+        val cm = ColorMatrix().apply { setSaturation(1.9f) }
         cm.postConcat(ColorMatrix(floatArrayOf(
-            1.12f, 0f, 0f, 0f, 6f,
-            0f, 1.12f, 0f, 0f, 6f,
-            0f, 0f, 1.12f, 0f, 6f,
+            1.22f, 0f, 0f, 0f, -18f,
+            0f, 1.22f, 0f, 0f, -18f,
+            0f, 0f, 1.22f, 0f, -18f,
             0f, 0f, 0f, 1f, 0f
         )))
         val vivid = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
@@ -57,21 +58,28 @@ object IconGlass {
         drawWholeIcon(c, icon, s)
         c.restore()
 
-        // película de vidro fumê por cima: escurece o ícone sem trocar a cor
+        // película de vidro fumê: leve no centro (cor viva) e escura nas bordas e embaixo
         p.shader = LinearGradient(
             0f, 0f, 0f, s,
-            Color.argb(22, 8, 12, 22), Color.argb(78, 8, 12, 22),
+            Color.argb(8, 8, 12, 22), Color.argb(70, 8, 12, 22),
+            Shader.TileMode.CLAMP
+        )
+        c.drawRect(rect, p)
+        p.shader = RadialGradient(
+            s / 2f, s / 2f, s * 0.78f,
+            intArrayOf(Color.argb(0, 4, 7, 14), Color.argb(0, 4, 7, 14), Color.argb(120, 4, 7, 14)),
+            floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP
         )
         c.drawRect(rect, p)
 
         // reflexo de vidro no topo
         p.shader = LinearGradient(
-            0f, 0f, 0f, s * 0.5f,
-            Color.argb(85, 255, 255, 255), Color.argb(0, 255, 255, 255),
+            0f, 0f, 0f, s * 0.38f,
+            Color.argb(48, 255, 255, 255), Color.argb(0, 255, 255, 255),
             Shader.TileMode.CLAMP
         )
-        c.drawRect(0f, 0f, s, s * 0.5f, p)
+        c.drawRect(0f, 0f, s, s * 0.38f, p)
         p.shader = null
         c.restore()
 
