@@ -5,7 +5,6 @@
     <application
         android:allowBackup="true"
         android:label="Liquid Launcher"
-        android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.LiquidLauncher">
         <activity
             android:name=".MainActivity"
