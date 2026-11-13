@@ -1,10 +1,12 @@
 package com.example.liquidlauncher
 
 import android.content.Context
-import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.AdaptiveIconDrawable
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
@@ -42,13 +44,23 @@ object IconGlass {
         c.drawRect(rect, p)
         p.shader = null
 
-        // o ícone inteiro, com as cores originais
+        // o ícone inteiro, com as cores mais vivas (mesmo matiz, só mais saturado e brilhante)
+        val cm = ColorMatrix().apply { setSaturation(1.4f) }
+        cm.postConcat(ColorMatrix(floatArrayOf(
+            1.12f, 0f, 0f, 0f, 6f,
+            0f, 1.12f, 0f, 0f, 6f,
+            0f, 0f, 1.12f, 0f, 6f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        val vivid = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
+        c.saveLayer(0f, 0f, s, s, vivid)
         drawWholeIcon(c, icon, s)
+        c.restore()
 
         // película de vidro fumê por cima: escurece o ícone sem trocar a cor
         p.shader = LinearGradient(
             0f, 0f, 0f, s,
-            Color.argb(60, 8, 12, 22), Color.argb(135, 8, 12, 22),
+            Color.argb(22, 8, 12, 22), Color.argb(78, 8, 12, 22),
             Shader.TileMode.CLAMP
         )
         c.drawRect(rect, p)
