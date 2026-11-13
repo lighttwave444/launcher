@@ -2,6 +2,10 @@
 <manifest package="com.example.liquidlauncher"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- para ler o papel de parede e desfocar a gaveta -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <!-- Android 11+: sem isso queryIntentActivities devolve lista quase vazia -->
     <queries>
         <intent>

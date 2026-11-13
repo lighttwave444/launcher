@@ -7,6 +7,6 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <!-- película escura translúcida: é ela que recebe o desfoque da janela -->
-        <item name="android:windowBackground">@drawable/glass_background</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
     </style>
 </resources>
