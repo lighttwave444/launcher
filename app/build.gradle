@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    namespace "com.example.liquidlauncher"
     compileSdk 34
 
     defaultConfig {
