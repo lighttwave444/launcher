@@ -3,6 +3,10 @@ package com.example.liquidlauncher
 import android.app.WallpaperManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.widget.Button
+import java.io.File
+import java.io.FileOutputStream
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.provider.Settings
@@ -232,11 +236,69 @@ class MainActivity : AppCompatActivity() {
             box.addView(card, clp)
         }
 
+        val exportBtn = Button(this)
+        exportBtn.text = "Exportar ícones dos apps"
+        exportBtn.setOnClickListener {
+            dialog?.dismiss()
+            exportIcons()
+        }
+        box.addView(exportBtn)
+
         dialog = AlertDialog.Builder(this)
             .setTitle("Tema dos ícones")
             .setView(box)
             .setNegativeButton("Fechar", null)
             .show()
+    }
+
+    // ---------- exportar os ícones originais (para montar o pack de PNGs) ----------
+
+    private fun renderLayer(d: android.graphics.drawable.Drawable, size: Int, scale: Float): Bitmap {
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val box = size * scale
+        val off = ((size - box) / 2f).toInt()
+        d.setBounds(off, off, off + box.toInt(), off + box.toInt())
+        d.draw(c)
+        return bmp
+    }
+
+    private fun savePng(file: File, bmp: Bitmap) {
+        FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bmp.recycle()
+    }
+
+    /** Salva, em Download/icones-apps, as camadas de cada ícone (fundo, desenho, inteiro) + a lista dos apps. */
+    private fun exportIcons() {
+        try {
+            val dir = File("/sdcard/Download/icones-apps")
+            dir.mkdirs()
+            val list = StringBuilder()
+            var count = 0
+            for (a in apps) {
+                val raw = rawIconCache[a.packageName + "/" + a.className] ?: continue
+                val name = a.packageName
+                list.append(a.label).append("|").append(a.packageName).append("|").append(a.className).append("\n")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && raw is AdaptiveIconDrawable) {
+                    raw.background?.let { savePng(File(dir, "$name.bg.png"), renderLayer(it, 512, 1.5f)) }
+                    raw.foreground?.let { savePng(File(dir, "$name.fg.png"), renderLayer(it, 512, 1.5f)) }
+                    val full = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+                    val cv = Canvas(full)
+                    val box = 512 * 1.5f
+                    val off = ((512 - box) / 2f).toInt()
+                    raw.background?.let { it.setBounds(off, off, off + box.toInt(), off + box.toInt()); it.draw(cv) }
+                    raw.foreground?.let { it.setBounds(off, off, off + box.toInt(), off + box.toInt()); it.draw(cv) }
+                    savePng(File(dir, "$name.full.png"), full)
+                } else {
+                    savePng(File(dir, "$name.full.png"), renderLayer(raw, 512, 1.0f))
+                }
+                count++
+            }
+            File(dir, "apps.txt").writeText(list.toString())
+            Toast.makeText(this, "Exportados $count ícones em Download/icones-apps", Toast.LENGTH_LONG).show()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Não consegui exportar: " + t.message, Toast.LENGTH_LONG).show()
+        }
     }
 
     // ---------- toque longo no ícone: informações / desinstalar ----------
