@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -27,7 +29,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.abs
 import kotlin.math.max
@@ -41,7 +44,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var blurImage: ImageView
     private lateinit var recyclerView: RecyclerView
     private lateinit var search: EditText
-    private lateinit var adapter: AppAdapter
+    private lateinit var adapter: PagesAdapter
+    private lateinit var dots: LinearLayout
+    private var shownApps: List<AppInfo> = emptyList()
     private lateinit var gestures: GestureDetector
 
     private val apps = mutableListOf<AppInfo>()
@@ -83,14 +88,29 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        adapter = AppAdapter(apps, unit) { launchApp(it) }
-        recyclerView.layoutManager = GridLayoutManager(this, 4)
+        adapter = PagesAdapter(unit, 4) { launchApp(it) }
+        recyclerView.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         recyclerView.adapter = adapter
+        PagerSnapHelper().attachToRecyclerView(recyclerView)
+        dots = findViewById(R.id.dots)
+        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    val lm = rv.layoutManager as LinearLayoutManager
+                    val pos = lm.findFirstCompletelyVisibleItemPosition()
+                    if (pos >= 0) updateDots(pos)
+                }
+            }
+        })
+        // quando o tamanho da lista muda, refaz as páginas (quantos apps cabem por página)
+        recyclerView.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) recyclerView.post { repage() }
+        }
 
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: Editable?) { adapter.filter(s?.toString().orEmpty()) }
+            override fun afterTextChanged(s: Editable?) { applyFilter(s?.toString().orEmpty()) }
         })
 
         // Gesto: deslizar para cima abre a gaveta; para baixo (no topo da lista) fecha
@@ -133,6 +153,48 @@ class MainActivity : AppCompatActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
+    private fun applyFilter(q: String) {
+        val t = q.trim()
+        shownApps = if (t.isEmpty()) apps.toList()
+        else apps.filter { it.label.contains(t, ignoreCase = true) }
+        repage()
+    }
+
+    /** Divide os apps em páginas: quantas linhas cabem na altura da gaveta x 4 colunas. */
+    private fun repage() {
+        val h = recyclerView.height
+        if (h <= 0) return
+        val rowPx = ui(112f)               // ícone + nome + espaços de uma linha
+        val rows = maxOf(1, (h - ui(8f)) / rowPx)
+        val perPage = rows * 4
+        val pages = shownApps.chunked(perPage)
+        adapter.submit(pages)
+        recyclerView.scrollToPosition(0)
+        buildDots(pages.size)
+    }
+
+    private fun buildDots(count: Int) {
+        dots.removeAllViews()
+        if (count <= 1) return
+        for (i in 0 until count) {
+            val dot = View(this)
+            dot.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            }
+            val lp = LinearLayout.LayoutParams(ui(7f), ui(7f))
+            lp.setMargins(ui(4f), 0, ui(4f), 0)
+            dots.addView(dot, lp)
+        }
+        updateDots(0)
+    }
+
+    private fun updateDots(selected: Int) {
+        for (i in 0 until dots.childCount) {
+            dots.getChildAt(i).alpha = if (i == selected) 1f else 0.35f
+        }
+    }
+
     private fun ui(v: Float): Int = (v * unit).toInt()
 
     private fun setMargins(v: View, l: Float, t: Float, r: Float, b: Float) {
@@ -167,7 +229,8 @@ class MainActivity : AppCompatActivity() {
             search.setCompoundDrawablesRelative(sd, null, null, null)
         }
 
-        recyclerView.setPadding(ui(4f), ui(8f), ui(4f), ui(24f))
+        recyclerView.setPadding(0, 0, 0, 0)
+        findViewById<View>(R.id.dots).setPadding(0, ui(8f), 0, ui(18f))
     }
 
     private fun openDrawer() {
@@ -307,7 +370,7 @@ class MainActivity : AppCompatActivity() {
             .sortedBy { it.label.lowercase() }
         apps.clear()
         apps.addAll(list)
-        adapter.filter(search.text.toString())
+        applyFilter(search.text.toString())
         bindDock()
     }
 
