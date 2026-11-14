@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- liga a barra de gestos sozinho (permissão dada por root: pm grant) -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+
     <!-- desinstalar apps pelo launcher -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
