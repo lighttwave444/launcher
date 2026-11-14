@@ -36,8 +36,72 @@ object IconGlass {
     private const val S = 240
 
     /** theme 0 = vidro escuro (logo colorido) | theme 1 = vidro claro (logo prateado, estilo Glassify Glass) */
-    fun make(ctx: Context, icon: Drawable, theme: Int = 0): Drawable =
-        if (theme == 1) makeGlass(ctx, icon) else makeDark(ctx, icon)
+    fun make(ctx: Context, icon: Drawable, theme: Int = 0, pkg: String = ""): Drawable =
+        when (theme) {
+            1 -> makeGlass(ctx, icon)
+            2 -> makePack(ctx, icon, pkg) ?: makeDark(ctx, icon)
+            else -> makeDark(ctx, icon)
+        }
+
+    // ---------------- TEMA 3: pack de PNGs (desenhados app por app) sobre peça de vidro escuro ----------------
+
+    private fun makePack(ctx: Context, icon: Drawable, pkg: String): Drawable? {
+        val logo: Bitmap = try {
+            ctx.assets.open("icons/$pkg.png").use { android.graphics.BitmapFactory.decodeStream(it) }
+        } catch (t: Throwable) {
+            null
+        } ?: return null
+
+        val bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val s = S.toFloat()
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        val tile = squircle(s, 3.7)
+
+        c.save()
+        c.clipPath(tile)
+        // vidro escuro: mais claro em cima, bem escuro embaixo
+        p.shader = LinearGradient(
+            0f, 0f, 0f, s,
+            Color.argb(252, 44, 48, 56), Color.argb(252, 16, 18, 23),
+            Shader.TileMode.CLAMP
+        )
+        c.drawRect(0f, 0f, s, s, p)
+        // luz suave no topo
+        p.shader = LinearGradient(
+            0f, 0f, 0f, s * 0.5f,
+            Color.argb(34, 255, 255, 255), Color.argb(0, 255, 255, 255),
+            Shader.TileMode.CLAMP
+        )
+        c.drawRect(0f, 0f, s, s * 0.5f, p)
+        p.shader = null
+        // o desenho do app (PNG já no tamanho e na posição certos)
+        c.drawBitmap(logo, null, RectF(0f, 0f, s, s), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        c.restore()
+        logo.recycle()
+
+        // borda de luz fininha
+        val sw = s * 0.02f
+        val inner = Path()
+        val m = Matrix()
+        val k = (s - sw) / s
+        m.setScale(k, k, s / 2f, s / 2f)
+        tile.transform(m, inner)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = sw
+        p.shader = LinearGradient(
+            0f, 0f, s, s,
+            intArrayOf(
+                Color.argb(190, 255, 255, 255), Color.argb(26, 255, 255, 255),
+                Color.argb(26, 255, 255, 255), Color.argb(120, 255, 255, 255)
+            ),
+            floatArrayOf(0f, 0.4f, 0.6f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        c.drawPath(inner, p)
+        return BitmapDrawable(ctx.resources, bmp)
+    }
+
 
     private fun makeDark(ctx: Context, icon: Drawable): Drawable {
         val bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888)

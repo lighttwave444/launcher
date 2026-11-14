@@ -176,11 +176,11 @@ class MainActivity : AppCompatActivity() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(ui(16f), ui(12f), ui(16f), ui(4f))
-        val names = arrayOf("Vidro escuro", "Vidro claro")
+        val names = arrayOf("Vidro escuro", "Vidro claro", "Pack de PNG (Glassify)")
         val sample = apps.take(4)
         var dialog: AlertDialog? = null
 
-        for (t in 0..1) {
+        for (t in 0..2) {
             val selected = t == iconTheme
             val card = LinearLayout(this)
             card.orientation = LinearLayout.VERTICAL
@@ -210,7 +210,7 @@ class MainActivity : AppCompatActivity() {
                 val raw = rawIconCache[key] ?: continue
                 val iv = ImageView(this)
                 iv.setImageDrawable(
-                    iconCache.getOrPut(t.toString() + "|" + key) { IconGlass.make(this, raw, t) }
+                    iconCache.getOrPut(t.toString() + "|" + key) { IconGlass.make(this, raw, t, a.packageName) }
                 )
                 val lp = LinearLayout.LayoutParams(ui(52f), ui(52f))
                 lp.marginEnd = ui(10f)
@@ -611,7 +611,7 @@ class MainActivity : AppCompatActivity() {
                 val ri = it
                 val raw = rawIconCache.getOrPut(key) { ri.loadIcon(pm) }
                 val glassIcon = iconCache.getOrPut(iconTheme.toString() + "|" + key) {
-                    IconGlass.make(this, raw, iconTheme)
+                    IconGlass.make(this, raw, iconTheme, ri.activityInfo.packageName)
                 }
                 AppInfo(
                     it.loadLabel(pm).toString(),
