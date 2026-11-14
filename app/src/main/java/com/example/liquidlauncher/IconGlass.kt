@@ -9,6 +9,8 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
@@ -88,17 +90,31 @@ object IconGlass {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && icon is AdaptiveIconDrawable)
                 icon.foreground
             else null
+        val kind = if (fg != null) glyphKind(fg) else KIND_UNUSABLE
 
-        if (fg != null && glyphUsable(fg)) {
-            // só o logo (sem o fundo do app), com cores bem vivas
-            val cm = ColorMatrix().apply { setSaturation(1.35f) }
-            val vivid = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
-            c.saveLayer(0f, 0f, s, s, vivid)
+        if (fg != null && kind != KIND_UNUSABLE) {
             val box = s * 1.2f
             val off = (s - box) / 2f
             fg.setBounds(off.toInt(), off.toInt(), (off + box).toInt(), (off + box).toInt())
-            fg.draw(c)
-            c.restore()
+
+            // logo branco: pinta com a cor original do app (a cor do fundo do ícone dele)
+            var tint: Int? = null
+            if (kind == KIND_WHITE_GLYPH) {
+                val bg = (icon as AdaptiveIconDrawable).background
+                if (bg != null) tint = brandColor(bg)
+            }
+
+            if (tint != null) {
+                fg.colorFilter = PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN)
+                fg.draw(c)
+                fg.colorFilter = null
+            } else {
+                val cm = ColorMatrix().apply { setSaturation(1.35f) }
+                val vivid = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
+                c.saveLayer(0f, 0f, s, s, vivid)
+                fg.draw(c)
+                c.restore()
+            }
         } else {
             // ícone que já traz fundo próprio (ou logo escuro): vai inteiro, menor, dentro da peça
             drawWhole(c, icon, s, s * 0.70f)
@@ -127,8 +143,12 @@ object IconGlass {
         c.restore()
     }
 
-    /** O logo serve sobre vidro escuro? Falso se tiver fundo próprio, estiver vazio ou for escuro demais. */
-    private fun glyphUsable(fg: Drawable): Boolean {
+    private const val KIND_UNUSABLE = 0
+    private const val KIND_COLORED = 1
+    private const val KIND_WHITE_GLYPH = 2
+
+    /** Classifica o logo: sem uso (fundo próprio/vazio/escuro), colorido, ou branco (precisa ganhar a cor da marca). */
+    private fun glyphKind(fg: Drawable): Int {
         val n = 108
         val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
         val cv = Canvas(bm)
@@ -140,22 +160,62 @@ object IconGlass {
         for ((x, y) in pts) {
             if (Color.alpha(bm.getPixel(x, y)) > 200) opaqueCorners++
         }
-        if (opaqueCorners >= 3) { bm.recycle(); return false }
+        if (opaqueCorners >= 3) { bm.recycle(); return KIND_UNUSABLE }
 
         var sum = 0.0
         var cnt = 0
+        var whiteish = 0
         for (y in 18 until 90 step 2) {
             for (x in 18 until 90 step 2) {
                 val px = bm.getPixel(x, y)
                 if (Color.alpha(px) > 128) {
-                    sum += (0.299 * Color.red(px) + 0.587 * Color.green(px) + 0.114 * Color.blue(px)) / 255.0
+                    val r = Color.red(px)
+                    val g = Color.green(px)
+                    val b = Color.blue(px)
+                    val lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+                    sum += lum
+                    cnt++
+                    val spread = maxOf(r, g, b) - minOf(r, g, b)
+                    if (spread < 40 && lum > 0.75) whiteish++
+                }
+            }
+        }
+        bm.recycle()
+        if (cnt < 20) return KIND_UNUSABLE
+        if (whiteish.toDouble() / cnt > 0.8) return KIND_WHITE_GLYPH
+        return if (sum / cnt > 0.22) KIND_COLORED else KIND_UNUSABLE
+    }
+
+    /** Cor da marca = cor média do fundo do ícone original; null se for cinza/branco/preto. */
+    private fun brandColor(bg: Drawable): Int? {
+        val n = 108
+        val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(bm)
+        bg.setBounds(0, 0, n, n)
+        bg.draw(cv)
+        var r = 0
+        var g = 0
+        var b = 0
+        var cnt = 0
+        for (y in 36 until 72 step 3) {
+            for (x in 36 until 72 step 3) {
+                val px = bm.getPixel(x, y)
+                if (Color.alpha(px) > 200) {
+                    r += Color.red(px)
+                    g += Color.green(px)
+                    b += Color.blue(px)
                     cnt++
                 }
             }
         }
         bm.recycle()
-        if (cnt < 20) return false
-        return sum / cnt > 0.22
+        if (cnt < 10) return null
+        val hsv = FloatArray(3)
+        Color.colorToHSV(Color.rgb(r / cnt, g / cnt, b / cnt), hsv)
+        if (hsv[1] < 0.3f) return null            // fundo cinza/branco/preto: mantém o logo branco
+        hsv[1] = minOf(1f, hsv[1] * 1.1f)
+        hsv[2] = maxOf(hsv[2], 0.85f)             // bem vivo e visível sobre o vidro escuro
+        return Color.HSVToColor(hsv)
     }
 
     /** Superelipse (squircle): cantos macios, tipo "almofada". */
