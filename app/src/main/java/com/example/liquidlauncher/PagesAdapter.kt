@@ -13,7 +13,8 @@ import androidx.recyclerview.widget.RecyclerView
 class PagesAdapter(
     private val unit: Float,
     private val columns: Int,
-    private val onClick: (AppInfo) -> Unit
+    private val onClick: (AppInfo) -> Unit,
+    private val onLongClick: (AppInfo) -> Unit
 ) : RecyclerView.Adapter<PagesAdapter.PageViewHolder>() {
 
     private var pages: List<List<AppInfo>> = emptyList()
@@ -67,6 +68,7 @@ class PagesAdapter(
                     tv.text = app.label
                     cell.setPadding(0, (8f * unit).toInt(), 0, (8f * unit).toInt())
                     cell.setOnClickListener { onClick(app) }
+                    cell.setOnLongClickListener { onLongClick(app); true }
                     row.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 } else {
                     // célula vazia só para manter as colunas alinhadas

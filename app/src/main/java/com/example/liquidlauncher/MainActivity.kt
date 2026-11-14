@@ -3,6 +3,11 @@ package com.example.liquidlauncher
 import android.app.WallpaperManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -88,7 +93,7 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        adapter = PagesAdapter(unit, 4) { launchApp(it) }
+        adapter = PagesAdapter(unit, 4, { launchApp(it) }, { showAppMenu(it) })
         recyclerView.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         recyclerView.adapter = adapter
         PagerSnapHelper().attachToRecyclerView(recyclerView)
@@ -140,6 +145,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         loadInstalledApps()
         loadBlurredWallpaper()
+        ensureNavService()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -151,6 +157,103 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         gestures.onTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
+    }
+
+    // ---------- toque longo no ícone: informações / desinstalar ----------
+
+    private fun showAppMenu(app: AppInfo) {
+        val items = arrayOf("Informações do app", "Desinstalar")
+        AlertDialog.Builder(this)
+            .setTitle(app.label)
+            .setItems(items) { _, which ->
+                if (which == 0) openAppInfo(app) else uninstall(app)
+            }
+            .show()
+    }
+
+    private fun openAppInfo(app: AppInfo) {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + app.packageName))
+        )
+    }
+
+    private fun isSystemApp(pkg: String): Boolean = try {
+        (packageManager.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM) != 0
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun uninstall(app: AppInfo) {
+        if (!isSystemApp(app.packageName)) {
+            // app instalado por você: diálogo normal do Android
+            startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + app.packageName)))
+        } else {
+            // app do sistema (ex.: Gmail): só com root, removendo para o seu usuário
+            AlertDialog.Builder(this)
+                .setTitle("Remover " + app.label + "?")
+                .setMessage(
+                    "É um app do sistema. Ele será removido só para o seu usuário (precisa de root) " +
+                        "e dá para restaurar depois. Pode causar problemas se for essencial."
+                )
+                .setPositiveButton("Remover") { _, _ -> removeSystemApp(app) }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
+    }
+
+    private fun removeSystemApp(app: AppInfo) {
+        Thread {
+            val ok = try {
+                val pr = Runtime.getRuntime().exec(
+                    arrayOf("su", "-c", "pm uninstall --user 0 " + app.packageName)
+                )
+                pr.waitFor() == 0
+            } catch (t: Throwable) {
+                false
+            }
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    if (ok) app.label + " removido" else "Não consegui remover (root negado?)",
+                    Toast.LENGTH_LONG
+                ).show()
+                loadInstalledApps()
+            }
+        }.start()
+    }
+
+    // ---------- barra de gestos (serviço de acessibilidade) ----------
+
+    private fun ensureNavService() {
+        val cn = packageName + "/" + packageName + ".NavService"
+        val cur = Settings.Secure.getString(
+            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: ""
+        if (cur.split(':').any { it.equals(cn, ignoreCase = true) }) return
+        try {
+            // com a permissão WRITE_SECURE_SETTINGS (dada por root) o app liga sozinho
+            val newVal = if (cur.isEmpty()) cn else "$cur:$cn"
+            Settings.Secure.putString(
+                contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, newVal
+            )
+            Settings.Secure.putString(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, "1")
+        } catch (e: SecurityException) {
+            val prefs = getSharedPreferences("liquid", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("asked_nav", false)) {
+                prefs.edit().putBoolean("asked_nav", true).apply()
+                AlertDialog.Builder(this)
+                    .setTitle("Barra de gestos")
+                    .setMessage(
+                        "Ative \"Liquid Launcher - barra de gestos\" em Acessibilidade para ter a barra " +
+                            "de voltar, início e recentes por cima dos apps."
+                    )
+                    .setPositiveButton("Abrir") { _, _ ->
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                    .setNegativeButton("Agora não", null)
+                    .show()
+            }
+        }
     }
 
     private fun applyFilter(q: String) {
