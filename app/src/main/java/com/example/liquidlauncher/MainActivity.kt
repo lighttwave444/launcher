@@ -12,14 +12,17 @@ import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -43,6 +46,7 @@ class MainActivity : AppCompatActivity() {
 
     private val apps = mutableListOf<AppInfo>()
     private var drawerOpen = false
+    private var unit = 1f
     private val iconCache = mutableMapOf<String, android.graphics.drawable.Drawable>()
 
     // Apps do dock: cada item é uma lista de nomes/pacotes possíveis (o primeiro que existir vale)
@@ -56,6 +60,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // "dp virtual": largura da tela em pixels / 360 — não depende do DPI configurado no sistema
+        val dm = resources.displayMetrics
+        unit = minOf(dm.widthPixels, dm.heightPixels) / 360f
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
@@ -66,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         blurImage = findViewById(R.id.blur)
         recyclerView = findViewById(R.id.app_grid)
         search = findViewById(R.id.search)
+        applyUnits()
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -75,7 +83,7 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        adapter = AppAdapter(apps) { launchApp(it) }
+        adapter = AppAdapter(apps, unit) { launchApp(it) }
         recyclerView.layoutManager = GridLayoutManager(this, 4)
         recyclerView.adapter = adapter
 
@@ -123,6 +131,43 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         gestures.onTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun ui(v: Float): Int = (v * unit).toInt()
+
+    private fun setMargins(v: View, l: Float, t: Float, r: Float, b: Float) {
+        val p = v.layoutParams as ViewGroup.MarginLayoutParams
+        p.setMargins(ui(l), ui(t), ui(r), ui(b))
+        v.layoutParams = p
+    }
+
+    /** Põe todos os tamanhos em pixels fixos relativos à tela (imune ao DPI). */
+    private fun applyUnits() {
+        val clock = findViewById<TextView>(R.id.clock)
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_PX, 80f * unit)
+        setMargins(clock, 0f, 56f, 0f, 0f)
+        findViewById<TextView>(R.id.date).setTextSize(TypedValue.COMPLEX_UNIT_PX, 16f * unit)
+        val hint = findViewById<TextView>(R.id.swipe_hint)
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_PX, 12f * unit)
+        setMargins(hint, 0f, 0f, 0f, 12f)
+
+        val dock = findViewById<View>(R.id.dock)
+        dock.layoutParams.height = ui(94f)
+        setMargins(dock, 16f, 0f, 16f, 12f)
+        dock.setPadding(ui(11f), ui(11f), ui(11f), ui(11f))
+
+        search.layoutParams.height = ui(48f)
+        setMargins(search, 16f, 12f, 16f, 8f)
+        search.setTextSize(TypedValue.COMPLEX_UNIT_PX, 15f * unit)
+        search.setPadding(ui(16f), 0, ui(16f), 0)
+        search.compoundDrawablePadding = ui(10f)
+        val sd = search.compoundDrawablesRelative[0]
+        if (sd != null) {
+            sd.setBounds(0, 0, ui(20f), ui(20f))
+            search.setCompoundDrawablesRelative(sd, null, null, null)
+        }
+
+        recyclerView.setPadding(ui(4f), ui(8f), ui(4f), ui(24f))
     }
 
     private fun openDrawer() {
@@ -183,9 +228,9 @@ class MainActivity : AppCompatActivity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     blurImage.setImageBitmap(drawerBg)
                     val dens = resources.displayMetrics.density
-                    search.background = GlassDrawable(search, root, lens, 24f * dens)
+                    search.background = GlassDrawable(search, root, lens, ui(24f).toFloat())
                     findViewById<LinearLayout>(R.id.dock).background =
-                        GlassDrawable(findViewById(R.id.dock), root, lens, 30f * dens)
+                        GlassDrawable(findViewById(R.id.dock), root, lens, ui(30f).toFloat())
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         try { lastWallpaperId = wm.getWallpaperId(WallpaperManager.FLAG_SYSTEM) }
                         catch (t: Throwable) { }
