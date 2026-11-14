@@ -9,6 +9,7 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Path
@@ -32,7 +33,11 @@ import kotlin.math.sin
 object IconGlass {
     private const val S = 220
 
-    fun make(ctx: Context, icon: Drawable): Drawable {
+    /** theme 0 = vidro escuro (logo colorido) | theme 1 = vidro claro (logo prateado, estilo Glassify Glass) */
+    fun make(ctx: Context, icon: Drawable, theme: Int = 0): Drawable =
+        if (theme == 1) makeGlass(ctx, icon) else makeDark(ctx, icon)
+
+    private fun makeDark(ctx: Context, icon: Drawable): Drawable {
         val bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val s = S.toFloat()
@@ -84,6 +89,110 @@ object IconGlass {
 
         return BitmapDrawable(ctx.resources, bmp)
     }
+
+    // ---------------- TEMA 2: vidro claro translúcido, logo prateado ----------------
+
+    private fun makeGlass(ctx: Context, icon: Drawable): Drawable {
+        val bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val s = S.toFloat()
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        val tile = squircle(s)
+
+        c.save()
+        c.clipPath(tile)
+
+        // vidro claro e translúcido (o fundo aparece através)
+        p.shader = LinearGradient(
+            0f, 0f, 0f, s,
+            Color.argb(84, 255, 255, 255), Color.argb(30, 255, 255, 255),
+            Shader.TileMode.CLAMP
+        )
+        c.drawRect(0f, 0f, s, s, p)
+
+        // sombra suave nas bordas, dá profundidade de vidro grosso
+        p.shader = RadialGradient(
+            s / 2f, s / 2f, s * 0.78f,
+            intArrayOf(Color.argb(0, 6, 10, 30), Color.argb(0, 6, 10, 30), Color.argb(70, 6, 10, 30)),
+            floatArrayOf(0f, 0.6f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        c.drawRect(0f, 0f, s, s, p)
+
+        // reflexo no topo
+        p.shader = LinearGradient(
+            0f, 0f, 0f, s * 0.5f,
+            Color.argb(80, 255, 255, 255), Color.argb(0, 255, 255, 255),
+            Shader.TileMode.CLAMP
+        )
+        c.drawRect(0f, 0f, s, s * 0.5f, p)
+        p.shader = null
+
+        drawLogoMono(c, icon, s)
+        c.restore()
+
+        // borda de luz
+        val sw = s * 0.024f
+        val inner = Path()
+        val m = Matrix()
+        val k = (s - sw) / s
+        m.setScale(k, k, s / 2f, s / 2f)
+        tile.transform(m, inner)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = sw
+        p.shader = LinearGradient(
+            0f, 0f, s, s,
+            intArrayOf(
+                Color.argb(215, 255, 255, 255), Color.argb(40, 255, 255, 255),
+                Color.argb(40, 255, 255, 255), Color.argb(150, 255, 255, 255)
+            ),
+            floatArrayOf(0f, 0.4f, 0.6f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        c.drawPath(inner, p)
+
+        return BitmapDrawable(ctx.resources, bmp)
+    }
+
+    /** Logo em tons de prata/cinza claro (como no Glassify Glass). */
+    private fun drawLogoMono(c: Canvas, icon: Drawable, s: Float) {
+        val silver = Color.argb(238, 224, 228, 235)
+        // cinza claro que mantém os detalhes internos do desenho
+        val gray = ColorMatrix().apply { setSaturation(0f) }
+        gray.postConcat(ColorMatrix(floatArrayOf(
+            0.6f, 0f, 0f, 0f, 100f,
+            0f, 0.6f, 0f, 0f, 100f,
+            0f, 0f, 0.6f, 0f, 100f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        val grayPaint = Paint().apply { colorFilter = ColorMatrixColorFilter(gray) }
+
+        val fg: Drawable? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && icon is AdaptiveIconDrawable)
+                icon.foreground
+            else null
+        val kind = if (fg != null) glyphKind(fg) else KIND_UNUSABLE
+
+        if (fg != null && kind != KIND_UNUSABLE) {
+            val box = s * 1.2f
+            val off = (s - box) / 2f
+            fg.setBounds(off.toInt(), off.toInt(), (off + box).toInt(), (off + box).toInt())
+            if (kind == KIND_WHITE_GLYPH) {
+                fg.colorFilter = PorterDuffColorFilter(silver, PorterDuff.Mode.SRC_IN)
+                fg.draw(c)
+                fg.colorFilter = null
+            } else {
+                c.saveLayer(0f, 0f, s, s, grayPaint)
+                fg.draw(c)
+                c.restore()
+            }
+        } else {
+            c.saveLayer(0f, 0f, s, s, grayPaint)
+            drawWhole(c, icon, s, s * 0.64f)
+            c.restore()
+        }
+    }
+
 
     private fun drawLogo(c: Canvas, icon: Drawable, s: Float) {
         val fg: Drawable? =

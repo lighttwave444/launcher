@@ -58,6 +58,8 @@ class MainActivity : AppCompatActivity() {
     private var drawerOpen = false
     private var unit = 1f
     private val iconCache = mutableMapOf<String, android.graphics.drawable.Drawable>()
+    private val rawIconCache = mutableMapOf<String, android.graphics.drawable.Drawable>()
+    private var iconTheme = 0
 
     // Apps do dock: cada item é uma lista de nomes/pacotes possíveis (o primeiro que existir vale)
     private val dockSpecs = listOf(
@@ -73,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         // "dp virtual": largura da tela em pixels / 360 — não depende do DPI configurado no sistema
         val dm = resources.displayMetrics
         unit = minOf(dm.widthPixels, dm.heightPixels) / 360f
+        iconTheme = getSharedPreferences("liquid", Context.MODE_PRIVATE).getInt("icon_theme", 0)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
@@ -84,6 +87,10 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.app_grid)
         search = findViewById(R.id.search)
         applyUnits()
+        findViewById<View>(R.id.theme_btn).apply {
+            background = GearDrawable()
+            setOnClickListener { showThemeDialog() }
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -157,6 +164,79 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         gestures.onTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
+    }
+
+    // ---------- escolha do tema dos ícones ----------
+
+    private fun showThemeDialog() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(ui(16f), ui(12f), ui(16f), ui(4f))
+        val names = arrayOf("Vidro escuro", "Vidro claro")
+        val sample = apps.take(4)
+        var dialog: AlertDialog? = null
+
+        for (t in 0..1) {
+            val selected = t == iconTheme
+            val card = LinearLayout(this)
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(ui(12f), ui(10f), ui(12f), ui(12f))
+            val bg = GradientDrawable()
+            bg.cornerRadius = ui(16f).toFloat()
+            bg.setColor(Color.argb(if (selected) 40 else 14, 128, 128, 128))
+            bg.setStroke(ui(if (selected) 2f else 1f), Color.argb(if (selected) 220 else 70, 128, 128, 128))
+            card.background = bg
+
+            val title = TextView(this)
+            title.text = names[t] + (if (selected) "  \u2713" else "")
+            title.setTextSize(TypedValue.COMPLEX_UNIT_PX, 15f * unit)
+            card.addView(title)
+
+            val icons = LinearLayout(this)
+            icons.orientation = LinearLayout.HORIZONTAL
+            icons.setPadding(ui(10f), ui(10f), ui(10f), ui(10f))
+            val back = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(27, 42, 90), Color.rgb(10, 15, 31))
+            )
+            back.cornerRadius = ui(14f).toFloat()
+            icons.background = back
+            for (a in sample) {
+                val key = a.packageName + "/" + a.className
+                val raw = rawIconCache[key] ?: continue
+                val iv = ImageView(this)
+                iv.setImageDrawable(
+                    iconCache.getOrPut(t.toString() + "|" + key) { IconGlass.make(this, raw, t) }
+                )
+                val lp = LinearLayout.LayoutParams(ui(52f), ui(52f))
+                lp.marginEnd = ui(10f)
+                icons.addView(iv, lp)
+            }
+            val ilp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            ilp.topMargin = ui(8f)
+            card.addView(icons, ilp)
+
+            card.setOnClickListener {
+                iconTheme = t
+                getSharedPreferences("liquid", Context.MODE_PRIVATE)
+                    .edit().putInt("icon_theme", t).apply()
+                loadInstalledApps()
+                dialog?.dismiss()
+            }
+            val clp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            clp.bottomMargin = ui(10f)
+            box.addView(card, clp)
+        }
+
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Tema dos ícones")
+            .setView(box)
+            .setNegativeButton("Fechar", null)
+            .show()
     }
 
     // ---------- toque longo no ícone: informações / desinstalar ----------
@@ -322,7 +402,11 @@ class MainActivity : AppCompatActivity() {
         dock.setPadding(ui(11f), ui(11f), ui(11f), ui(11f))
 
         search.layoutParams.height = ui(48f)
-        setMargins(search, 16f, 12f, 16f, 8f)
+        setMargins(findViewById(R.id.search_row), 16f, 12f, 16f, 8f)
+        val tb = findViewById<View>(R.id.theme_btn)
+        tb.layoutParams.width = ui(40f)
+        tb.layoutParams.height = ui(40f)
+        setMargins(tb, 10f, 0f, 0f, 0f)
         search.setTextSize(TypedValue.COMPLEX_UNIT_PX, 15f * unit)
         search.setPadding(ui(16f), 0, ui(16f), 0)
         search.compoundDrawablePadding = ui(10f)
@@ -462,7 +546,11 @@ class MainActivity : AppCompatActivity() {
             .filter { it.activityInfo.packageName != packageName }
             .map {
                 val key = it.activityInfo.packageName + "/" + it.activityInfo.name
-                val glassIcon = iconCache.getOrPut(key) { IconGlass.make(this, it.loadIcon(pm)) }
+                val ri = it
+                val raw = rawIconCache.getOrPut(key) { ri.loadIcon(pm) }
+                val glassIcon = iconCache.getOrPut(iconTheme.toString() + "|" + key) {
+                    IconGlass.make(this, raw, iconTheme)
+                }
                 AppInfo(
                     it.loadLabel(pm).toString(),
                     glassIcon,
