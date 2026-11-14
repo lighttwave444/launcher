@@ -2,6 +2,7 @@ package com.example.liquidlauncher
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
@@ -105,23 +106,24 @@ object IconGlass {
         val c = Canvas(bmp)
         val s = S.toFloat()
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        val tile = squircle(s)
+        val tile = squircle(s, 3.7)
 
         c.save()
         c.clipPath(tile)
 
-        // corpo de vidro claro e translúcido
-        p.shader = LinearGradient(
-            0f, 0f, 0f, s,
-            Color.argb(88, 255, 255, 255), Color.argb(36, 255, 255, 255),
+        // corpo de vidro claro: luminoso no centro (pastilha convexa)
+        p.shader = RadialGradient(
+            s * 0.5f, s * 0.42f, s * 0.64f,
+            Color.argb(104, 255, 255, 255), Color.argb(42, 255, 255, 255),
             Shader.TileMode.CLAMP
         )
         c.drawRect(0f, 0f, s, s, p)
 
-        // toque azulado de vidro
-        p.shader = LinearGradient(
-            0f, 0f, s, s,
-            Color.argb(40, 130, 180, 255), Color.argb(14, 130, 180, 255),
+        // bordas um pouco mais fundas e azuladas (dá volume)
+        p.shader = RadialGradient(
+            s / 2f, s / 2f, s * 0.78f,
+            intArrayOf(Color.argb(0, 10, 25, 90), Color.argb(0, 10, 25, 90), Color.argb(54, 10, 25, 90)),
+            floatArrayOf(0f, 0.58f, 1f),
             Shader.TileMode.CLAMP
         )
         c.drawRect(0f, 0f, s, s, p)
@@ -229,7 +231,7 @@ object IconGlass {
         return silhouette(icon)
     }
 
-    /** Ícone com fundo próprio: tira o fundo e fica só o desenho. Null se o fundo não for uniforme. */
+    /** Ícone com fundo próprio (liso ou em degradê): tira o fundo e fica só o desenho. Null se o fundo for arte/foto. */
     private fun silhouette(icon: Drawable): Bitmap? {
         val n = G
         val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
@@ -248,41 +250,62 @@ object IconGlass {
         val px = IntArray(n * n)
         bm.getPixels(px, 0, n, 0, 0, n, n)
         val inset = n / 16
-        val pts = intArrayOf(
-            inset * n + inset, inset * n + (n - 1 - inset),
-            (n - 1 - inset) * n + inset, (n - 1 - inset) * n + (n - 1 - inset)
-        )
-        var ca = 0
-        var cr = 0
-        var cg = 0
-        var cb = 0
-        for (i in pts) {
-            val q = px[i]
-            ca += Color.alpha(q); cr += Color.red(q); cg += Color.green(q); cb += Color.blue(q)
-        }
-        ca /= 4; cr /= 4; cg /= 4; cb /= 4
+        val far = n - 1 - inset
+        val span = (far - inset).toFloat()
 
-        val transparentBg = ca < 128
+        val tl = px[inset * n + inset]
+        val tr = px[inset * n + far]
+        val bl = px[far * n + inset]
+        val br = px[far * n + far]
+        val alphaAvg = (Color.alpha(tl) + Color.alpha(tr) + Color.alpha(bl) + Color.alpha(br)) / 4
+        val transparentBg = alphaAvg < 128
+
+        // cor estimada do fundo em (x,y): interpolação dos 4 cantos (serve para fundo liso e para degradê)
+        fun est(x: Int, y: Int, ch: Int): Float {
+            val u = ((x - inset) / span).coerceIn(0f, 1f)
+            val v = ((y - inset) / span).coerceIn(0f, 1f)
+            fun c(q: Int): Float = when (ch) {
+                0 -> Color.red(q).toFloat()
+                1 -> Color.green(q).toFloat()
+                else -> Color.blue(q).toFloat()
+            }
+            return (1 - u) * (1 - v) * c(tl) + u * (1 - v) * c(tr) + (1 - u) * v * c(bl) + u * v * c(br)
+        }
+
         if (!transparentBg) {
-            for (i in pts) {
-                val q = px[i]
-                val d = maxOf(abs(Color.red(q) - cr), abs(Color.green(q) - cg), abs(Color.blue(q) - cb))
-                if (d > 40) { bm.recycle(); return null }
+            // o fundo tem que ser liso: pontos da borda precisam bater com a interpolação
+            val bx = intArrayOf(n / 2, n / 2, inset, far, n / 4, 3 * n / 4, inset, inset)
+            val by = intArrayOf(inset, far, n / 2, n / 2, inset, inset, n / 4, 3 * n / 4)
+            for (k in bx.indices) {
+                val q = px[by[k] * n + bx[k]]
+                val d = maxOf(
+                    abs(Color.red(q) - est(bx[k], by[k], 0)),
+                    abs(Color.green(q) - est(bx[k], by[k], 1)),
+                    abs(Color.blue(q) - est(bx[k], by[k], 2))
+                )
+                if (d > 45f) { bm.recycle(); return null }
             }
         }
 
         var fgCount = 0
-        for (i in px.indices) {
-            val q = px[i]
-            val a: Int
-            if (transparentBg) {
-                a = Color.alpha(q)
-            } else {
-                val d = maxOf(abs(Color.red(q) - cr), abs(Color.green(q) - cg), abs(Color.blue(q) - cb)) / 255f
-                a = (Color.alpha(q) * smooth((d - 0.08f) / 0.2f)).toInt()
+        for (y in 0 until n) {
+            for (x in 0 until n) {
+                val i = y * n + x
+                val q = px[i]
+                val a: Int
+                if (transparentBg) {
+                    a = Color.alpha(q)
+                } else {
+                    val d = maxOf(
+                        abs(Color.red(q) - est(x, y, 0)),
+                        abs(Color.green(q) - est(x, y, 1)),
+                        abs(Color.blue(q) - est(x, y, 2))
+                    ) / 255f
+                    a = (Color.alpha(q) * smooth((d - 0.10f) / 0.2f)).toInt()
+                }
+                if (a > 100) fgCount++
+                px[i] = Color.argb(a, 255, 255, 255)
             }
-            if (a > 100) fgCount++
-            px[i] = Color.argb(a, 255, 255, 255)
         }
         if (fgCount > n * n * 0.42 || fgCount < n * n * 0.01) { bm.recycle(); return null }
         bm.setPixels(px, 0, n, 0, 0, n, n)
@@ -311,11 +334,16 @@ object IconGlass {
         if (maxX < 0) return
         val w = maxX - minX + 1
         val h = maxY - minY + 1
-        val sc = s * 0.56f / maxOf(w, h).toFloat()
+        val sc = s * 0.62f / maxOf(w, h).toFloat()
         val dw = w * sc
         val dh = h * sc
         val dst = RectF((s - dw) / 2f, (s - dh) / 2f, (s + dw) / 2f, (s + dh) / 2f)
         val src = Rect(minX, minY, maxX + 1, maxY + 1)
+        // brilho suave atrás do logo (vidro iluminado)
+        val glow = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        glow.maskFilter = BlurMaskFilter(s * 0.04f, BlurMaskFilter.Blur.NORMAL)
+        glow.alpha = 110
+        c.drawBitmap(gb, src, dst, glow)
         c.drawBitmap(gb, src, dst, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
     }
 
@@ -453,10 +481,9 @@ object IconGlass {
     }
 
     /** Superelipse (squircle): cantos macios, tipo "almofada". */
-    private fun squircle(s: Float): Path {
+    private fun squircle(s: Float, n: Double = 4.6): Path {
         val path = Path()
         val a = s / 2.0
-        val n = 4.6
         val steps = 180
         for (i in 0..steps) {
             val t = 2.0 * PI * i / steps
