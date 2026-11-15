@@ -79,7 +79,8 @@ class MainActivity : AppCompatActivity() {
         // "dp virtual": largura da tela em pixels / 360 — não depende do DPI configurado no sistema
         val dm = resources.displayMetrics
         unit = minOf(dm.widthPixels, dm.heightPixels) / 360f
-        iconTheme = getSharedPreferences("liquid", Context.MODE_PRIVATE).getInt("icon_theme", 0)
+        iconTheme = getSharedPreferences("liquid", Context.MODE_PRIVATE).getInt("icon_theme", 2)
+        IconGlass.setTargetSize((72f * unit).toInt())
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 

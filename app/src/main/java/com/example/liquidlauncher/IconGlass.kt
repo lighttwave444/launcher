@@ -34,7 +34,26 @@ import kotlin.math.sin
  * com borda de luz fininha, e o desenho (logo) do app por cima, com as cores vivas.
  */
 object IconGlass {
-    private const val S = 240
+    private var S = 240
+
+    /** Gera os ícones já no tamanho em que aparecem na tela (nada de reduzir depois = sem serrilhado). */
+    fun setTargetSize(px: Int) {
+        S = px.coerceIn(96, 480)
+    }
+
+    /** Reduz em etapas (metade por vez) e só então ajusta: mantém as bordas lisas, sem pixelizar. */
+    private fun smoothScale(src: Bitmap, tw: Int, th: Int): Bitmap {
+        if (src.width == tw && src.height == th) return src
+        var b = src
+        while (b.width / 2 >= tw && b.height / 2 >= th) {
+            val nb = Bitmap.createScaledBitmap(b, b.width / 2, b.height / 2, true)
+            if (b !== src) b.recycle()
+            b = nb
+        }
+        val out = Bitmap.createScaledBitmap(b, maxOf(1, tw), maxOf(1, th), true)
+        if (b !== src && b !== out) b.recycle()
+        return out
+    }
 
     /** theme 0 = vidro escuro (logo colorido) | theme 1 = vidro claro (logo prateado, estilo Glassify Glass) */
     fun make(ctx: Context, icon: Drawable, theme: Int = 0, pkg: String = ""): Drawable =
@@ -69,11 +88,11 @@ object IconGlass {
     }
 
     private fun makePack(ctx: Context, icon: Drawable, pkg: String): Drawable? {
-        val logo: Bitmap = try {
+        val logo: Bitmap? = try {
             ctx.assets.open("icons/$pkg.png").use { android.graphics.BitmapFactory.decodeStream(it) }
         } catch (t: Throwable) {
             null
-        } ?: return null
+        }
 
         val bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -98,15 +117,26 @@ object IconGlass {
         p.color = Color.rgb(19, 22, 26)
         c.drawRect(0f, 0f, s, s, p)
 
-        // o desenho do app (o PNG cobre 146 px da referência; a peça tem 150)
-        val k = 146f / 150f
-        val inset = s * (1f - k) / 2f
-        c.drawBitmap(
-            logo, null, RectF(inset, inset, s - inset, s - inset),
-            Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        )
+        if (logo != null) {
+            // o desenho do app (o PNG cobre 146 px da referência; a peça tem 150)
+            val k = 146f / 150f
+            val tw = (s * k).toInt()
+            val scaled = smoothScale(logo, tw, tw)
+            val inset = (s - tw) / 2f
+            c.drawBitmap(scaled, inset, inset, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+            if (scaled !== logo) scaled.recycle()
+            logo.recycle()
+        } else {
+            // app sem PNG (instalado depois): o mesmo vidro, com o logo gerado do ícone dele
+            val g = buildBrandGlyph(icon)
+            if (g != null) {
+                drawNormalized(c, g, s, 0.567f, false)
+                g.recycle()
+            } else {
+                drawWhole(c, icon, s, s * 0.74f)
+            }
+        }
         c.restore()
-        logo.recycle()
 
         fun ring(width: Float, colors: IntArray) {
             val inner = Path()
@@ -285,6 +315,85 @@ object IconGlass {
         return BitmapDrawable(ctx.resources, bmp)
     }
 
+    /** Cor da marca = cor do fundo original do ícone; null se for branco/cinza/preto. */
+    private fun brandColorOf(bg: Drawable?): Int? {
+        if (bg == null) return null
+        val n = 48
+        val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(bm)
+        val box = n * 1.5f
+        val off = ((n - box) / 2f).toInt()
+        bg.setBounds(off, off, off + box.toInt(), off + box.toInt())
+        bg.draw(cv)
+        var r = 0
+        var g = 0
+        var b = 0
+        var cnt = 0
+        for (y in n / 4 until 3 * n / 4) {
+            for (x in n / 4 until 3 * n / 4) {
+                val q = bm.getPixel(x, y)
+                if (Color.alpha(q) > 200) { r += Color.red(q); g += Color.green(q); b += Color.blue(q); cnt++ }
+            }
+        }
+        bm.recycle()
+        if (cnt == 0) return null
+        val hsv = FloatArray(3)
+        Color.colorToHSV(Color.rgb(r / cnt, g / cnt, b / cnt), hsv)
+        if (hsv[1] < 0.2f || hsv[2] < 0.12f) return null
+        hsv[1] = minOf(1f, hsv[1] * 1.1f + 0.04f)
+        hsv[2] = maxOf(hsv[2], 0.9f)
+        return Color.HSVToColor(hsv)
+    }
+
+    /**
+     * Logo para app sem PNG: desenho branco -> cor do fundo do ícone; desenho colorido -> mantém
+     * as cores (clareando só o que sumiria no vidro escuro). Sem como separar -> branco.
+     */
+    private fun buildBrandGlyph(icon: Drawable): Bitmap? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && icon is AdaptiveIconDrawable) {
+            val fg = icon.foreground
+            if (fg != null) {
+                val kind = glyphKind(fg)
+                if (kind != KIND_UNUSABLE) {
+                    val bm = Bitmap.createBitmap(G, G, Bitmap.Config.ARGB_8888)
+                    val cv = Canvas(bm)
+                    val box = G * 1.5f
+                    val off = ((G - box) / 2f).toInt()
+                    fg.setBounds(off, off, off + box.toInt(), off + box.toInt())
+                    fg.draw(cv)
+                    val px = IntArray(G * G)
+                    bm.getPixels(px, 0, G, 0, 0, G, G)
+                    val brand: Int = if (kind == KIND_WHITE_GLYPH) (brandColorOf(icon.background) ?: Color.WHITE) else Color.WHITE
+                    val hsv = FloatArray(3)
+                    for (i in px.indices) {
+                        val q = px[i]
+                        val a = Color.alpha(q)
+                        if (a == 0) continue
+                        val ca = (((a / 255f) - 0.2f) / 0.6f).coerceIn(0f, 1f)
+                        if (ca <= 0f) { px[i] = 0; continue }
+                        val rgb: Int
+                        if (kind == KIND_WHITE_GLYPH) {
+                            rgb = brand
+                        } else {
+                            Color.colorToHSV(q, hsv)
+                            val neutralDark = (hsv[2] < 0.35f && hsv[1] < 0.6f) || (hsv[1] < 0.25f && hsv[2] < 0.5f)
+                            if (neutralDark) {
+                                rgb = Color.WHITE
+                            } else {
+                                hsv[2] = maxOf(hsv[2], 0.72f)
+                                rgb = Color.HSVToColor(hsv)
+                            }
+                        }
+                        px[i] = Color.argb((ca * 255f).toInt(), Color.red(rgb), Color.green(rgb), Color.blue(rgb))
+                    }
+                    bm.setPixels(px, 0, G, 0, 0, G, G)
+                    return bm
+                }
+            }
+        }
+        return silhouette(icon)
+    }
+
     /** Monta o logo em branco sólido (G x G). Retorna null se o ícone não dá para virar logo. */
     private fun buildGlyph(icon: Drawable): Bitmap? {
         val fg: Drawable? =
@@ -401,7 +510,7 @@ object IconGlass {
     }
 
     /** Desenha o logo centralizado e sempre com o mesmo tamanho (~56% da peça). */
-    private fun drawNormalized(c: Canvas, gb: Bitmap, s: Float) {
+    private fun drawNormalized(c: Canvas, gb: Bitmap, s: Float, ratio: Float = 0.62f, withGlow: Boolean = true) {
         val n = gb.width
         val px = IntArray(n * n)
         gb.getPixels(px, 0, n, 0, 0, n, n)
@@ -422,17 +531,24 @@ object IconGlass {
         if (maxX < 0) return
         val w = maxX - minX + 1
         val h = maxY - minY + 1
-        val sc = s * 0.62f / maxOf(w, h).toFloat()
+        val sc = s * ratio / maxOf(w, h).toFloat()
         val dw = w * sc
         val dh = h * sc
         val dst = RectF((s - dw) / 2f, (s - dh) / 2f, (s + dw) / 2f, (s + dh) / 2f)
         val src = Rect(minX, minY, maxX + 1, maxY + 1)
-        // brilho suave atrás do logo (vidro iluminado)
-        val glow = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        glow.maskFilter = BlurMaskFilter(s * 0.04f, BlurMaskFilter.Blur.NORMAL)
-        glow.alpha = 110
-        c.drawBitmap(gb, src, dst, glow)
-        c.drawBitmap(gb, src, dst, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        if (withGlow) {
+            // brilho suave atrás do logo (vidro iluminado)
+            val glow = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+            glow.maskFilter = BlurMaskFilter(s * 0.04f, BlurMaskFilter.Blur.NORMAL)
+            glow.alpha = 110
+            c.drawBitmap(gb, src, dst, glow)
+        }
+        // logo nítido: recorta, reduz em etapas e desenha 1:1
+        val crop = Bitmap.createBitmap(gb, minX, minY, w, h)
+        val scaled = smoothScale(crop, maxOf(1, dw.toInt()), maxOf(1, dh.toInt()))
+        c.drawBitmap(scaled, dst.left, dst.top, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        if (scaled !== crop) scaled.recycle()
+        crop.recycle()
     }
 
     private fun drawLogo(c: Canvas, icon: Drawable, s: Float) {
