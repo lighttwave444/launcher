@@ -20,32 +20,25 @@ import kotlin.math.abs
 /**
  * Barra de gestos por cima dos apps (para quando a barra do sistema some, ex.: DPI alterado).
  *
- * Sem teclado: um traço fininho e apagado embaixo; ao encostar ela acorda e fica visível,
- * e volta a dormir depois de uns segundos.
- *   - deslizar para cima: início | para o lado: recentes | toque (já acordada): voltar
- *
- * Com teclado aberto: a barra SOME (só sobra uma faixa finíssima invisível no rodapé, longe das
- * teclas). Deslizando para cima a partir do rodapé, ela reaparece acima do teclado por uns
- * segundos e depois some de novo. Fica escondida dentro do próprio launcher.
+ * Normalmente ela fica ESCONDIDA: só sobra uma faixa finíssima e invisível no rodapé, que não
+ * aparece nem atrapalha toques. Para ela sair é preciso PUXAR PARA CIMA a partir do rodapé.
+ * Aí a barra aparece (acima do teclado, se ele estiver aberto) e fica uns segundos:
+ *   - deslizar para cima: início | para o lado: recentes | toque: voltar
+ * Depois de uns segundos sem uso, ela some de novo. Escondida dentro do próprio launcher.
  */
 class NavService : AccessibilityService() {
 
     private var bar: View? = null
     private var wm: WindowManager? = null
     private var unit = 1f
-    private var awake = false
     private var barVisible = true
     private var kbHeight = 0
     private var revealed = false
     private val handler = Handler(Looper.getMainLooper())
 
-    private val sleepRunnable = Runnable {
-        awake = false
-        if (kbHeight > 0) {
-            revealed = false
-            applyLayout()
-        }
-        bar?.invalidate()
+    private val hideRunnable = Runnable {
+        revealed = false
+        applyLayout()
     }
 
     override fun onServiceConnected() {
@@ -70,7 +63,7 @@ class NavService : AccessibilityService() {
         val shouldShow: Boolean = when {
             // só a tela principal do launcher esconde a barra (a própria barra e os diálogos não contam)
             pkg == packageName -> if (cls == "$packageName.MainActivity") false else return
-            // barra de status, teclado e afins não mudam nada (era isso que fazia piscar)
+            // barra de status, teclado e afins não mudam nada
             pkg.startsWith("com.android.systemui") -> return
             pkg.contains("inputmethod") || pkg.contains("keyboard") -> return
             else -> true
@@ -83,7 +76,7 @@ class NavService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
-        handler.removeCallbacks(sleepRunnable)
+        handler.removeCallbacks(hideRunnable)
         hideBar()
         super.onDestroy()
     }
@@ -93,15 +86,13 @@ class NavService : AccessibilityService() {
         bar = null
     }
 
-    private fun wake() {
-        handler.removeCallbacks(sleepRunnable)
-        awake = true
-        bar?.invalidate()
+    private fun scheduleHide(ms: Long = 3000L) {
+        handler.removeCallbacks(hideRunnable)
+        handler.postDelayed(hideRunnable, ms)
     }
 
-    private fun scheduleSleep() {
-        handler.removeCallbacks(sleepRunnable)
-        handler.postDelayed(sleepRunnable, if (kbHeight > 0) 3000L else 2500L)
+    private fun cancelHide() {
+        handler.removeCallbacks(hideRunnable)
     }
 
     /** Descobre se o teclado está aberto e qual a altura dele. */
@@ -121,25 +112,15 @@ class NavService : AccessibilityService() {
         } catch (t: Throwable) { }
         if (kb == kbHeight) return
         kbHeight = kb
-        if (kb <= 0) revealed = false
         applyLayout()
     }
 
-    /** Ajusta tamanho e posição da janela da barra conforme o estado. */
+    /** Escondida: faixa finíssima no rodapé. Aparecida: barra inteira (acima do teclado, se houver). */
     private fun applyLayout() {
         val v = bar ?: return
         val lp = v.layoutParams as? WindowManager.LayoutParams ?: return
-        val full = (30f * unit).toInt()
-        val thin = (8f * unit).toInt()
-        val h: Int
-        val y: Int
-        if (kbHeight <= 0) {
-            h = full; y = 0
-        } else if (revealed) {
-            h = full; y = kbHeight + (4f * unit).toInt()
-        } else {
-            h = thin; y = 0
-        }
+        val h = if (revealed) (30f * unit).toInt() else (8f * unit).toInt()
+        val y = if (revealed && kbHeight > 0) kbHeight + (4f * unit).toInt() else 0
         if (lp.height != h || lp.y != y) {
             lp.height = h
             lp.y = y
@@ -153,64 +134,70 @@ class NavService : AccessibilityService() {
         hideBar()
         val service = this
         val view = object : View(this) {
-            private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+            private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                alpha = 215
+            }
             private var downX = 0f
             private var downY = 0f
-            private var wasAwake = false
 
             override fun onDraw(c: Canvas) {
-                // com o teclado aberto e a barra escondida, não desenha nada
-                if (kbHeight > 0 && !revealed) return
-                val pw = width * (if (awake) 0.62f else 0.40f)
-                val ph = (if (awake) 5f else 3f) * unit
-                paint.alpha = if (awake) 215 else 70
+                // escondida: não desenha nada
+                if (!revealed) return
+                val pw = width * 0.62f
+                val ph = 5f * unit
                 val l = (width - pw) / 2f
                 val t = height - ph - 6f * unit
                 c.drawRoundRect(l, t, l + pw, t + ph, ph / 2f, ph / 2f, paint)
             }
 
             override fun onTouchEvent(ev: MotionEvent): Boolean {
-                val hiddenByKeyboard = kbHeight > 0 && !revealed
+                val hidden = !revealed
                 when (ev.action) {
                     MotionEvent.ACTION_DOWN -> {
                         downX = ev.rawX
                         downY = ev.rawY
-                        wasAwake = awake
-                        if (!hiddenByKeyboard) wake()
+                        if (!hidden) cancelHide()
                     }
                     MotionEvent.ACTION_UP -> {
                         val dx = ev.rawX - downX
                         val dy = ev.rawY - downY
                         val th = 24f * unit
-                        if (hiddenByKeyboard) {
-                            // só um deslize para cima, a partir do rodapé, traz a barra de volta
-                            if (dy < -(th / 2f) && abs(dy) > abs(dx)) {
+                        if (hidden) {
+                            // só um puxão para cima faz a barra sair; toque simples não faz nada
+                            if (dy < -(12f * unit) && abs(dy) > abs(dx)) {
                                 revealed = true
-                                awake = true
                                 service.applyLayout()
-                                scheduleSleep()
+                                scheduleHide()
                             }
                             return true
                         }
                         if (dy < -th && abs(dy) > abs(dx)) {
                             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                            revealed = false
+                            service.applyLayout()
+                            cancelHide()
                         } else if (abs(dx) > th * 1.5f && abs(dx) > abs(dy)) {
                             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
-                        } else if (abs(dx) < th && abs(dy) < th && wasAwake) {
-                            // toque só vale se a barra já estava acordada (evita toque sem querer)
+                            revealed = false
+                            service.applyLayout()
+                            cancelHide()
+                        } else if (abs(dx) < th && abs(dy) < th) {
                             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                            scheduleHide()
+                        } else {
+                            scheduleHide()
                         }
-                        scheduleSleep()
                     }
-                    MotionEvent.ACTION_CANCEL -> if (!hiddenByKeyboard) scheduleSleep()
+                    MotionEvent.ACTION_CANCEL -> if (!hidden) scheduleHide()
                 }
                 return true
             }
         }
 
         val lp = WindowManager.LayoutParams(
-            (180f * unit).toInt(),
-            (30f * unit).toInt(),
+            (200f * unit).toInt(),
+            (8f * unit).toInt(),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
