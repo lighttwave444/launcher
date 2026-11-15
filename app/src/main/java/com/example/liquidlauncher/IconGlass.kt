@@ -24,6 +24,7 @@ import android.os.Build
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sign
 import kotlin.math.sin
@@ -45,6 +46,28 @@ object IconGlass {
 
     // ---------------- TEMA 3: pack de PNGs (desenhados app por app) sobre peça de vidro escuro ----------------
 
+    /**
+     * Peça igual à do Glassify (medida na referência): formato squircle n=2,6, miolo liso e escuro
+     * (19,22,26) e um fio de luz fininho cuja força muda ao redor — forte em cima/esquerda,
+     * médio embaixo/direita e fraco no resto (luz de cima à esquerda).
+     */
+    private fun rimAlpha(theta: Float): Float {
+        fun diff(a: Float, b: Float): Float {
+            var d = a - b
+            while (d > 180f) d -= 360f
+            while (d < -180f) d += 360f
+            return d
+        }
+        val d1 = diff(theta, 220f)
+        val s1 = if (d1 <= 0f) 46f else 38f
+        val g1 = exp((-(d1 * d1) / (2f * s1 * s1)).toDouble()).toFloat()
+        val d2 = diff(theta, 45f)
+        val s2 = if (d2 >= 0f) 22f else 35f
+        val g2 = exp((-(d2 * d2) / (2f * s2 * s2)).toDouble()).toFloat()
+        val lum = 34f + 131f * g1 + 46f * g2
+        return ((lum - 21f) / 234f).coerceIn(0f, 1f)
+    }
+
     private fun makePack(ctx: Context, icon: Drawable, pkg: String): Drawable? {
         val logo: Bitmap = try {
             ctx.assets.open("icons/$pkg.png").use { android.graphics.BitmapFactory.decodeStream(it) }
@@ -56,49 +79,50 @@ object IconGlass {
         val c = Canvas(bmp)
         val s = S.toFloat()
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        val tile = squircle(s, 3.7)
+        val tile = squircle(s, 2.6)
+        val unit = s / 150f                      // 1 px da referência (peça de 150 px)
+
+        // fio de luz: força por ângulo (SweepGradient começa em 3h e gira no sentido horário)
+        val steps = 24
+        val rimColors = IntArray(steps + 1) { i ->
+            Color.argb((rimAlpha(i * 360f / steps) * 255f).toInt(), 255, 255, 255)
+        }
+        val glowColors = IntArray(steps + 1) { i ->
+            Color.argb((rimAlpha(i * 360f / steps) * 0.04f * 255f).toInt(), 255, 255, 255)
+        }
+        val pos = FloatArray(steps + 1) { i -> i.toFloat() / steps }
 
         c.save()
         c.clipPath(tile)
-        // vidro escuro: mais claro em cima, bem escuro embaixo
-        p.shader = LinearGradient(
-            0f, 0f, 0f, s,
-            Color.argb(252, 44, 48, 56), Color.argb(252, 16, 18, 23),
-            Shader.TileMode.CLAMP
-        )
+        // miolo liso e escuro, igual ao da referência
+        p.color = Color.rgb(19, 22, 26)
         c.drawRect(0f, 0f, s, s, p)
-        // luz suave no topo
-        p.shader = LinearGradient(
-            0f, 0f, 0f, s * 0.5f,
-            Color.argb(34, 255, 255, 255), Color.argb(0, 255, 255, 255),
-            Shader.TileMode.CLAMP
+
+        // o desenho do app (o PNG cobre 146 px da referência; a peça tem 150)
+        val k = 146f / 150f
+        val inset = s * (1f - k) / 2f
+        c.drawBitmap(
+            logo, null, RectF(inset, inset, s - inset, s - inset),
+            Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         )
-        c.drawRect(0f, 0f, s, s * 0.5f, p)
-        p.shader = null
-        // o desenho do app (PNG já no tamanho e na posição certos)
-        c.drawBitmap(logo, null, RectF(0f, 0f, s, s), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
         c.restore()
         logo.recycle()
 
-        // borda de luz fininha
-        val sw = s * 0.02f
-        val inner = Path()
-        val m = Matrix()
-        val k = (s - sw) / s
-        m.setScale(k, k, s / 2f, s / 2f)
-        tile.transform(m, inner)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = sw
-        p.shader = LinearGradient(
-            0f, 0f, s, s,
-            intArrayOf(
-                Color.argb(190, 255, 255, 255), Color.argb(26, 255, 255, 255),
-                Color.argb(26, 255, 255, 255), Color.argb(120, 255, 255, 255)
-            ),
-            floatArrayOf(0f, 0.4f, 0.6f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        c.drawPath(inner, p)
+        fun ring(width: Float, colors: IntArray) {
+            val inner = Path()
+            val m = Matrix()
+            val sc = (s - width) / s
+            m.setScale(sc, sc, s / 2f, s / 2f)
+            tile.transform(m, inner)
+            val q = Paint(Paint.ANTI_ALIAS_FLAG)
+            q.style = Paint.Style.STROKE
+            q.strokeWidth = width
+            q.shader = android.graphics.SweepGradient(s / 2f, s / 2f, colors, pos)
+            c.drawPath(inner, q)
+        }
+        ring(8f * unit, glowColors)    // brilho interno bem fraco
+        ring(2.4f * unit, rimColors)   // fio de luz da borda
+
         return BitmapDrawable(ctx.resources, bmp)
     }
 
