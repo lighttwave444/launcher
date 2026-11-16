@@ -56,6 +56,16 @@ object IconGlass {
     }
 
     /**
+     * IMPORTANTE: o Android guarda em cada bitmap a densidade "de fábrica" do aparelho. Se você mudou o DPI,
+     * o ícone era esticado/encolhido por essa diferença antes de aparecer (e ficava serrilhado/borrado).
+     * Com DENSITY_NONE o ícone é mostrado pixel por pixel, no tamanho exato em que foi desenhado.
+     */
+    private fun asDrawable(ctx: Context, bmp: Bitmap): Drawable {
+        bmp.density = Bitmap.DENSITY_NONE
+        return BitmapDrawable(ctx.resources, bmp)
+    }
+
+    /**
      * O Android NÃO suaviza o recorte (clipPath): a beira da peça fica serrilhada.
      * Aqui apaga tudo fora do formato com uma máscara SUAVE (antialias), deixando a borda lisa.
      */
@@ -385,7 +395,7 @@ object IconGlass {
         ring(8f * unit, glowColors)    // brilho interno bem fraco
         ring(2.4f * unit, rimColors)   // fio de luz da borda
 
-        return BitmapDrawable(ctx.resources, bmp)
+        return asDrawable(ctx, bmp)
     }
 
 
@@ -440,7 +450,7 @@ object IconGlass {
         )
         c.drawPath(inner, p)
 
-        return BitmapDrawable(ctx.resources, bmp)
+        return asDrawable(ctx, bmp)
     }
 
     // ---------------- TEMA 2: vidro claro "premium", logo branco sólido e padronizado ----------------
@@ -546,7 +556,7 @@ object IconGlass {
         )
         c.drawPath(inner2, p)
 
-        return BitmapDrawable(ctx.resources, bmp)
+        return asDrawable(ctx, bmp)
     }
 
     /** Cor da marca = cor do fundo original do ícone; null se for branco/cinza/preto. */
