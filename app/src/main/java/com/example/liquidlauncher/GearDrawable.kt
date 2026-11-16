@@ -70,15 +70,19 @@ class GearDrawable : Drawable() {
         )
         c.drawPath(path, fill)
 
-        c.save()
-        c.clipPath(path)
+        val layerId = c.saveLayer(b.left.toFloat(), top, b.right.toFloat(), b.bottom.toFloat(), null)
         spec.shader = LinearGradient(
             0f, top, 0f, top + h * 0.5f,
             Color.argb(120, 255, 255, 255), Color.argb(0, 255, 255, 255),
             Shader.TileMode.CLAMP
         )
         c.drawRect(b.left.toFloat(), top, b.right.toFloat(), top + h * 0.5f, spec)
-        c.restore()
+        val inv = Path(path)
+        inv.fillType = Path.FillType.INVERSE_WINDING
+        val outPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        outPaint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
+        c.drawPath(inv, outPaint)
+        c.restoreToCount(layerId)
 
         rim.strokeWidth = max(1f, b.width() * 0.035f)
         rim.shader = LinearGradient(

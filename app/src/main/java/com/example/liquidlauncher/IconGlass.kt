@@ -55,6 +55,18 @@ object IconGlass {
         return out
     }
 
+    /**
+     * O Android NÃO suaviza o recorte (clipPath): a beira da peça fica serrilhada.
+     * Aqui apaga tudo fora do formato com uma máscara SUAVE (antialias), deixando a borda lisa.
+     */
+    private fun softenEdge(c: Canvas, mask: Path) {
+        val inv = Path(mask)
+        inv.fillType = Path.FillType.INVERSE_WINDING
+        val q = Paint(Paint.ANTI_ALIAS_FLAG)
+        q.xfermode = android.graphics.PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
+        c.drawPath(inv, q)
+    }
+
     /** theme 0 = vidro escuro (logo colorido) | theme 1 = vidro claro (logo prateado, estilo Glassify Glass) */
     fun make(ctx: Context, icon: Drawable, theme: Int = 0, pkg: String = ""): Drawable =
         when (theme) {
@@ -137,6 +149,7 @@ object IconGlass {
             }
         }
         c.restore()
+        softenEdge(c, tile)
 
         fun ring(width: Float, colors: IntArray) {
             val inner = Path()
@@ -186,6 +199,7 @@ object IconGlass {
 
         drawLogo(c, icon, s)
         c.restore()
+        softenEdge(c, tile)
 
         // borda de luz fininha
         val sw = s * 0.022f
@@ -273,6 +287,7 @@ object IconGlass {
             drawWhole(c, icon, s, s * 0.74f)
         }
         c.restore()
+        softenEdge(c, tile)
 
         // borda de luz nítida e fina
         val sw = s * 0.02f
@@ -593,8 +608,7 @@ object IconGlass {
         val path = Path().apply {
             addRoundRect(RectF(off, off, off + size, off + size), rad, rad, Path.Direction.CW)
         }
-        c.save()
-        c.clipPath(path)
+        val layer = c.saveLayer(0f, 0f, s, s, null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && icon is AdaptiveIconDrawable) {
             val box = size * 1.5f
             val o = (s - box) / 2f
@@ -606,7 +620,8 @@ object IconGlass {
             icon.setBounds(off.toInt(), off.toInt(), (off + size).toInt(), (off + size).toInt())
             icon.draw(c)
         }
-        c.restore()
+        softenEdge(c, path)
+        c.restoreToCount(layer)
     }
 
     private const val KIND_UNUSABLE = 0

@@ -47,8 +47,7 @@ class GlassDrawable(
         path.reset()
         path.addRoundRect(rect, radius, radius, Path.Direction.CW)
 
-        c.save()
-        c.clipPath(path)
+        val layerId = c.saveLayer(0f, 0f, w, h, null)
 
         // lente: pedaço do papel de parede borrado, ampliado 10% (efeito de refração)
         if (lens != null && root.width > 0 && root.height > 0) {
@@ -85,7 +84,12 @@ class GlassDrawable(
             Shader.TileMode.CLAMP
         )
         c.drawRect(0f, 0f, w, h * 0.55f, specPaint)
-        c.restore()
+        val inv = Path(path)
+        inv.fillType = Path.FillType.INVERSE_WINDING
+        val outPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        outPaint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
+        c.drawPath(inv, outPaint)
+        c.restoreToCount(layerId)
 
         // borda de luz: forte no canto de cima/esquerda e embaixo/direita, fraca no meio
         val sw = 1.6f * d
