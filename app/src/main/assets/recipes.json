@@ -1,0 +1,133 @@
+{
+ "br.gov.caixa.tem": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.calculator": {
+  "cutwhite": true,
+  "cutlight": false
+ },
+ "com.android.chrome": {
+  "cutwhite": true,
+  "cutlight": false
+ },
+ "com.anthropic.claude": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.android.settings": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.myos.camera": {
+  "cutwhite": true,
+  "cutlight": false
+ },
+ "com.deepseek.chat": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.apps.nbu.files": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.apps.photos": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.apps.bard": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.gm": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.googlequicksearchbox": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "ai.x.grok": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.sevtinge.hyperceiler": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.instagram.android": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "br.com.intermedium": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "me.weishu.kernelsu": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.apps.tachyon": {
+  "cutwhite": true,
+  "cutlight": false
+ },
+ "com.google.android.apps.messaging": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "xyz.aethersx2.android": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.originsu.manager": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.tribalfs.pixels": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.meuapp.ponteiro": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.starlink.mobile": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.dialer": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.termux": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.whatsapp": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.google.android.youtube": {
+  "cutwhite": false,
+  "cutlight": true
+ },
+ "ru.zdevs.zarchiver": {
+  "cutwhite": false,
+  "cutlight": false
+ },
+ "com.android.vending": {
+  "cutwhite": false,
+  "cutlight": false,
+  "mode": "bgremove"
+ },
+ "com.larus.wolf": {
+  "cutwhite": false,
+  "cutlight": false,
+  "mode": "bgremove"
+ },
+ "br.gov.meugovbr": {
+  "cutwhite": false,
+  "cutlight": false,
+  "mode": "bgremove"
+ }
+}

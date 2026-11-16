@@ -77,6 +77,219 @@ object IconGlass {
 
     // ---------------- TEMA 3: pack de PNGs (desenhados app por app) sobre peça de vidro escuro ----------------
 
+    // ---------------- DESENHO EM VETOR (sem PNG): nítido em qualquer tamanho ----------------
+
+    private class Recipe(val cutWhite: Boolean, val cutLight: Boolean, val bgRemove: Boolean)
+    private var recipes: Map<String, Recipe>? = null
+
+    private fun recipeFor(ctx: Context, pkg: String): Recipe? {
+        var m = recipes
+        if (m == null) {
+            val map = HashMap<String, Recipe>()
+            try {
+                val txt = ctx.assets.open("recipes.json").bufferedReader().use { it.readText() }
+                val o = org.json.JSONObject(txt)
+                val keysIt = o.keys()
+                while (keysIt.hasNext()) {
+                    val k = keysIt.next()
+                    val r = o.getJSONObject(k)
+                    map[k] = Recipe(
+                        r.optBoolean("cutwhite", false),
+                        r.optBoolean("cutlight", false),
+                        r.optString("mode", "") == "bgremove"
+                    )
+                }
+            } catch (t: Throwable) { }
+            recipes = map
+            m = map
+        }
+        return m[pkg]
+    }
+
+    /**
+     * Desenha a camada da frente do ícone adaptável DIRETO no tamanho final (o vetor é refeito nesse
+     * tamanho, então a borda sai perfeita), com as mesmas regras de cor do pack:
+     * desenho branco -> cor do fundo; desenho colorido -> mantém (clareando o que sumiria);
+     * detalhes brancos viram vazado quando a receita pede. Devolve um Bitmap s x s pronto para colar.
+     */
+    private fun buildCrispGlyph(icon: Drawable, s: Int, ratio: Float, rec: Recipe?): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || icon !is AdaptiveIconDrawable) return null
+        val fg = icon.foreground ?: return null
+        val w0 = 256
+        val box = w0 * 1.5f
+        val l = ((w0 - box) / 2f).toInt()
+        val r = l + box.toInt()
+        val bgRemove = rec != null && rec.bgRemove
+
+        // passo 1: mede onde está o desenho
+        val probe = Bitmap.createBitmap(w0, w0, Bitmap.Config.ARGB_8888)
+        fg.setBounds(l, l, r, r)
+        fg.draw(Canvas(probe))
+        val pp = IntArray(w0 * w0)
+        probe.getPixels(pp, 0, w0, 0, 0, w0, w0)
+        probe.recycle()
+
+        val cs = intArrayOf(8 * w0 + 8, 8 * w0 + (w0 - 9), (w0 - 9) * w0 + 8, (w0 - 9) * w0 + (w0 - 9))
+        var bgR = 0f
+        var bgG = 0f
+        var bgB = 0f
+        if (bgRemove) {
+            for (i in cs) { bgR += Color.red(pp[i]); bgG += Color.green(pp[i]); bgB += Color.blue(pp[i]) }
+            bgR /= 4f; bgG /= 4f; bgB /= 4f
+        } else {
+            var opaque = 0
+            for (i in cs) if (Color.alpha(pp[i]) > 100) opaque++
+            if (opaque >= 3) return null            // a camada traz fundo próprio: não serve
+        }
+
+        var minX = w0
+        var minY = w0
+        var maxX = -1
+        var maxY = -1
+        for (y in 0 until w0) {
+            for (x in 0 until w0) {
+                val q = pp[y * w0 + x]
+                val present = if (bgRemove) {
+                    maxOf(abs(Color.red(q) - bgR), abs(Color.green(q) - bgG), abs(Color.blue(q) - bgB)) / 255f > 0.2f
+                } else {
+                    Color.alpha(q) > 64
+                }
+                if (present) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        if (maxX < 0) return null
+        val bw = maxX - minX + 1
+        val bh = maxY - minY + 1
+        val k = ratio * s / maxOf(bw, bh).toFloat()
+        val tx = s / 2f - (minX + maxX + 1) / 2f * k
+        val ty = s / 2f - (minY + maxY + 1) / 2f * k
+
+        // passo 2: desenha o vetor já no tamanho final
+        val g = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(g)
+        cv.translate(tx, ty)
+        cv.scale(k, k)
+        fg.setBounds(l, l, r, r)
+        fg.draw(cv)
+
+        // cor do fundo (suave) no mesmo enquadramento: dá a cor da marca / o degradê
+        var bgPx: IntArray? = null
+        val bgL = icon.background
+        if (bgL != null && !bgRemove) {
+            val sm = 24
+            val smb = Bitmap.createBitmap(sm, sm, Bitmap.Config.ARGB_8888)
+            val bbox = sm * 1.5f
+            val bl = ((sm - bbox) / 2f).toInt()
+            bgL.setBounds(bl, bl, bl + bbox.toInt(), bl + bbox.toInt())
+            bgL.draw(Canvas(smb))
+            val bgc = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+            val cv2 = Canvas(bgc)
+            cv2.translate(tx, ty)
+            val f = k * w0 / sm
+            cv2.scale(f, f)
+            cv2.drawBitmap(smb, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+            val arr = IntArray(s * s)
+            bgc.getPixels(arr, 0, s, 0, 0, s, s)
+            bgPx = arr
+            smb.recycle()
+            bgc.recycle()
+        }
+
+        val px = IntArray(s * s)
+        g.getPixels(px, 0, s, 0, 0, s, s)
+        val hsv = FloatArray(3)
+        val hsv2 = FloatArray(3)
+
+        // o desenho é branco? (decide se pinta com a cor do fundo)
+        var solid = 0
+        var whiteish = 0
+        var br = 0L
+        var bg = 0L
+        var bb = 0L
+        var bn = 0
+        if (!bgRemove) {
+            for (i in px.indices) {
+                val q = px[i]
+                if (Color.alpha(q) < 128) continue
+                solid++
+                Color.colorToHSV(q, hsv)
+                val lum = (0.299f * Color.red(q) + 0.587f * Color.green(q) + 0.114f * Color.blue(q)) / 255f
+                if (hsv[1] < 0.2f && lum > 0.78f) whiteish++
+                val bq = bgPx?.get(i)
+                if (bq != null && Color.alpha(bq) > 0) {
+                    br += Color.red(bq); bg += Color.green(bq); bb += Color.blue(bq); bn++
+                }
+            }
+            if (solid == 0) { g.recycle(); return null }
+        }
+        val whiteGlyph = !bgRemove && whiteish.toFloat() / maxOf(solid, 1) > 0.8f
+        var neutralBg = true
+        if (bn > 0) {
+            Color.colorToHSV(Color.rgb((br / bn).toInt(), (bg / bn).toInt(), (bb / bn).toInt()), hsv)
+            neutralBg = hsv[1] < 0.2f || hsv[2] < 0.12f
+        }
+
+        for (i in px.indices) {
+            val q = px[i]
+            var rr = Color.red(q)
+            var gg = Color.green(q)
+            var bl2 = Color.blue(q)
+            var cov: Float
+            if (bgRemove) {
+                val d = maxOf(abs(rr - bgR), abs(gg - bgG), abs(bl2 - bgB)) / 255f
+                cov = smooth((d - 0.06f) / 0.22f)
+                if (cov <= 0f) { px[i] = 0; continue }
+                // tira a mistura com o fundo para a borda não ficar clara
+                rr = ((rr - (1f - cov) * bgR) / cov).coerceIn(0f, 255f).toInt()
+                gg = ((gg - (1f - cov) * bgG) / cov).coerceIn(0f, 255f).toInt()
+                bl2 = ((bl2 - (1f - cov) * bgB) / cov).coerceIn(0f, 255f).toInt()
+            } else {
+                val a = Color.alpha(q)
+                if (a == 0) continue
+                cov = ((a / 255f) - 0.2f) / 0.6f
+                if (cov <= 0f) { px[i] = 0; continue }
+                if (cov > 1f) cov = 1f
+            }
+            val base = Color.rgb(rr, gg, bl2)
+            val rgb: Int
+            if (whiteGlyph) {
+                val bq = bgPx?.get(i)
+                if (neutralBg || bq == null || Color.alpha(bq) == 0) {
+                    rgb = Color.WHITE
+                } else {
+                    Color.colorToHSV(bq, hsv)
+                    hsv[1] = minOf(1f, hsv[1] * 1.1f + 0.04f)
+                    hsv[2] = maxOf(hsv[2], 0.9f)
+                    rgb = Color.HSVToColor(hsv)
+                }
+            } else {
+                Color.colorToHSV(base, hsv)
+                val neutralDark = (hsv[2] < 0.35f && hsv[1] < 0.6f) || (hsv[1] < 0.25f && hsv[2] < 0.5f)
+                if (neutralDark) {
+                    rgb = Color.WHITE
+                } else {
+                    hsv[2] = maxOf(hsv[2], 0.72f)
+                    rgb = Color.HSVToColor(hsv)
+                }
+            }
+            if (rec != null && (rec.cutWhite || rec.cutLight)) {
+                Color.colorToHSV(base, hsv2)
+                val lum = (0.299f * rr + 0.587f * gg + 0.114f * bl2) / 255f
+                val w = if (rec.cutLight) smooth((lum - 0.70f) / 0.18f)
+                else smooth((lum - 0.72f) / 0.16f) * smooth((0.30f - hsv2[1]) / 0.12f)
+                cov *= (1f - w)
+            }
+            px[i] = Color.argb((cov * 255f).toInt(), Color.red(rgb), Color.green(rgb), Color.blue(rgb))
+        }
+        g.setPixels(px, 0, s, 0, 0, s, s)
+        return g
+    }
+
     /**
      * Peça igual à do Glassify (medida na referência): formato squircle n=2,6, miolo liso e escuro
      * (19,22,26) e um fio de luz fininho cuja força muda ao redor — forte em cima/esquerda,
@@ -129,7 +342,13 @@ object IconGlass {
         p.color = Color.rgb(19, 22, 26)
         c.drawRect(0f, 0f, s, s, p)
 
-        if (logo != null) {
+        val rec = recipeFor(ctx, pkg)
+        val crisp: Bitmap? = if (rec != null || logo == null) buildCrispGlyph(icon, S, 0.567f, rec) else null
+        if (crisp != null) {
+            c.drawBitmap(crisp, 0f, 0f, null)
+            crisp.recycle()
+            logo?.recycle()
+        } else if (logo != null) {
             // o desenho do app (o PNG cobre 146 px da referência; a peça tem 150)
             val k = 146f / 150f
             val tw = (s * k).toInt()
