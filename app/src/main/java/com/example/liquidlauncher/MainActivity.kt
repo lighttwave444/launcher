@@ -92,6 +92,9 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.app_grid)
         search = findViewById(R.id.search)
         applyUnits()
+        // sem relógio e sem data na tela inicial
+        findViewById<View>(R.id.clock).visibility = View.GONE
+        findViewById<View>(R.id.date).visibility = View.GONE
         findViewById<View>(R.id.theme_btn).apply {
             background = GearDrawable()
             setOnClickListener { showThemeDialog() }
