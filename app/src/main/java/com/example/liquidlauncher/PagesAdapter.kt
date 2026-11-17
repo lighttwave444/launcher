@@ -30,9 +30,9 @@ class PagesAdapter(
         val ll = LinearLayout(parent.context)
         ll.orientation = LinearLayout.VERTICAL
         ll.layoutParams = RecyclerView.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        ll.setPadding((4f * unit).toInt(), (8f * unit).toInt(), (4f * unit).toInt(), 0)
+        ll.setPadding((4f * unit).toInt(), 0, (4f * unit).toInt(), 0)
         return PageViewHolder(ll)
     }
 

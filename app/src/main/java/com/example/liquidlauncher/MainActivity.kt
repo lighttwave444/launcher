@@ -109,9 +109,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         adapter = PagesAdapter(unit, 4, { launchApp(it) }, { showAppMenu(it) })
-        recyclerView.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        recyclerView.layoutManager = LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false)
         recyclerView.adapter = adapter
-        PagerSnapHelper().attachToRecyclerView(recyclerView)
         dots = findViewById(R.id.dots)
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
@@ -413,13 +412,9 @@ class MainActivity : AppCompatActivity() {
     private fun repage() {
         val h = recyclerView.height
         if (h <= 0) return
-        val rowPx = ui(112f)               // ícone + nome + espaços de uma linha
-        val rows = maxOf(1, (h - ui(8f)) / rowPx)
-        val perPage = rows * 4
-        val pages = shownApps.chunked(perPage)
-        adapter.submit(pages)
+        // um bloco só: cada item é uma linha de 4 apps, e a lista rola para baixo
+        adapter.submit(shownApps.chunked(4))
         recyclerView.scrollToPosition(0)
-        buildDots(pages.size)
     }
 
     private fun buildDots(count: Int) {
@@ -482,8 +477,9 @@ class MainActivity : AppCompatActivity() {
             search.setCompoundDrawablesRelative(sd, null, null, null)
         }
 
-        recyclerView.setPadding(0, 0, 0, 0)
-        findViewById<View>(R.id.dots).setPadding(0, ui(8f), 0, ui(18f))
+        recyclerView.clipToPadding = false
+        recyclerView.setPadding(0, ui(8f), 0, ui(24f))
+        findViewById<View>(R.id.dots).visibility = View.GONE
     }
 
     private fun openDrawer() {
