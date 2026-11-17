@@ -144,6 +144,8 @@ object IconGlass {
         var bgG = 0f
         var bgB = 0f
         if (bgRemove) {
+            // só serve se a camada tiver um fundo liso e opaco nos cantos
+            for (i in cs) if (Color.alpha(pp[i]) < 200) return null
             for (i in cs) { bgR += Color.red(pp[i]); bgG += Color.green(pp[i]); bgB += Color.blue(pp[i]) }
             bgR /= 4f; bgG /= 4f; bgB /= 4f
         } else {
@@ -175,6 +177,8 @@ object IconGlass {
         if (maxX < 0) return null
         val bw = maxX - minX + 1
         val bh = maxY - minY + 1
+        // desenho ocupando a janela inteira = o "fundo" foi tomado por desenho: deixa para o PNG
+        if (bgRemove && (bw > w0 * 0.9f || bh > w0 * 0.9f)) return null
         val k = ratio * s / maxOf(bw, bh).toFloat()
         val tx = s / 2f - (minX + maxX + 1) / 2f * k
         val ty = s / 2f - (minY + maxY + 1) / 2f * k
